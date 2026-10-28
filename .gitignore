@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+data/
+uploads/
+.env*
+!.env.example
+*.db
+*.db-*
+*.sqlite*
+*.tsbuildinfo
+*.log
+.vercel/
