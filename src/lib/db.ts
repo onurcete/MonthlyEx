@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient, type Client } from "@libsql/client";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AppData, Category } from "./types";
 import { statementMonthFromAnalysis } from "./reporting-period";
@@ -16,7 +16,7 @@ export function database() {
 async function initialize() {
   const url = process.env.DATABASE_URL || "file:data/monthlyex.db";
   if (process.env.VERCEL && url.startsWith("file:")) throw new Error("Vercel için kalıcı uzak veritabanı yapılandırılmalı.");
-  if (url.startsWith("file:")) await mkdir(path.dirname(path.resolve(url.slice(5))), { recursive: true });
+  if (url.startsWith("file:") && !url.startsWith("file::")) await mkdir(path.dirname(path.resolve(url.slice(5))), { recursive: true });
   const db = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
   await db.batch([
     "CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, name TEXT NOT NULL, last_four TEXT NOT NULL)",
@@ -27,7 +27,8 @@ async function initialize() {
     "CREATE TABLE IF NOT EXISTS statement_expenses (expense_id TEXT PRIMARY KEY REFERENCES expenses(id), statement_id TEXT NOT NULL REFERENCES statements(id), source_page INTEGER NOT NULL, installment TEXT)",
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT REFERENCES categories(id))",
     "CREATE UNIQUE INDEX IF NOT EXISTS categories_name_parent ON categories(COALESCE(parent_id, ''), name COLLATE NOCASE)",
-    "CREATE TABLE IF NOT EXISTS statement_periods (statement_id TEXT PRIMARY KEY REFERENCES statements(id), month TEXT NOT NULL CHECK(month GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'))"
+    "CREATE TABLE IF NOT EXISTS statement_periods (statement_id TEXT PRIMARY KEY REFERENCES statements(id), month TEXT NOT NULL CHECK(month GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'))",
+    "CREATE TABLE IF NOT EXISTS statement_files (statement_id TEXT PRIMARY KEY REFERENCES statements(id) ON DELETE CASCADE, data BLOB NOT NULL)"
   ], "write");
   await applyCategoryTaxonomy(db);
   // Migrate existing text labels to stable IDs, preserving historical categories.
@@ -45,6 +46,19 @@ async function initialize() {
   await initializeMerchantLearning(db);
   return db;
 }
+
+export async function readStatementFile(db: Client, id: string): Promise<Buffer | null> {
+  const stored = await db.execute({ sql: "SELECT data FROM statement_files WHERE statement_id = ?", args: [id] });
+  const raw = stored.rows[0]?.data;
+  if (raw instanceof ArrayBuffer) return Buffer.from(raw);
+  if (ArrayBuffer.isView(raw)) return Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
+  if (typeof raw === "string") return Buffer.from(raw, "base64");
+  if (!process.env.VERCEL) {
+    return readFile(path.join(process.cwd(), "data", "statements", id)).catch(() => null);
+  }
+  return null;
+}
+
 export async function backfillStatementPeriods(db: Client) {
   const missing = await db.execute("SELECT a.statement_id, a.result FROM statement_analyses a LEFT JOIN statement_periods p ON p.statement_id = a.statement_id WHERE p.statement_id IS NULL AND a.result IS NOT NULL");
   for (const row of missing.rows) {

@@ -14,6 +14,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   const db = await database();
   const tx = await db.transaction("write").catch(() => null);
   if (!tx) return NextResponse.json({ error: "Başka bir kayıt işlemi sürüyor. Tekrar deneyin." }, { status: 409 });
+  const isVercel = Boolean(process.env.VERCEL);
   const original = path.join(process.cwd(), "data", "statements", id);
   const staged = `${original}.deleting-${crypto.randomUUID()}`;
   let moved = false;
@@ -34,9 +35,12 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     }
     await tx.execute({ sql: "DELETE FROM statement_analyses WHERE statement_id = ?", args: [id] });
     await tx.execute({ sql: "DELETE FROM statement_periods WHERE statement_id = ?", args: [id] });
+    await tx.execute({ sql: "DELETE FROM statement_files WHERE statement_id = ?", args: [id] });
     await tx.execute({ sql: "DELETE FROM statements WHERE id = ?", args: [id] });
-    try { await rename(original, staged); moved = true; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    if (!isVercel) {
+      try { await rename(original, staged); moved = true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
     await tx.commit();
   } catch {
     await tx.rollback();

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
-import { database, loadCategories } from "@/lib/db";
+import { database, loadCategories, readStatementFile } from "@/lib/db";
 import { isSameOrigin } from "@/lib/request";
 import { analyzeDocument } from "@/lib/openai-analysis";
 import { applyMerchantLearning } from "@/lib/merchant-learning";
 
 export const runtime = "nodejs";
-export const maxDuration = 240;
+export const maxDuration = 60;
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: Context) {
@@ -39,7 +37,8 @@ export async function POST(request: Request, context: Context) {
   if (!claim.rows.length) return NextResponse.json({ error: "Analiz sürüyor. Kesintiye uğradıysa 5 dakika sonra yeniden deneyebilirsiniz." }, { status: 409 });
   await db.execute({ sql: "UPDATE statements SET status = 'analyzing' WHERE id = ?", args: [id] });
   try {
-    const bytes = await readFile(path.join(process.cwd(), "data", "statements", id));
+    const bytes = await readStatementFile(db, id);
+    if (!bytes) throw new Error("Belge dosyası bulunamadı.");
     const result = await analyzeDocument(bytes, await loadCategories());
     const analysis = await applyMerchantLearning(db, result.analysis);
     await db.batch([

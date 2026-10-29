@@ -7,7 +7,6 @@ import { isSameOrigin } from "@/lib/request";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
-  if (process.env.VERCEL) return NextResponse.json({ error: "Yayına geçmeden önce özel dosya depolaması bağlanmalı." }, { status: 503 });
   if (!isSameOrigin(request)) return NextResponse.json({ error: "Geçersiz kaynak." }, { status: 403 });
   if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ error: "En fazla 20 MB yüklenebilir." }, { status: 413 });
   const form = await request.formData().catch(() => null);
@@ -25,14 +24,20 @@ export async function POST(request: Request) {
   const existing = await db.execute({ sql: "SELECT id FROM statements WHERE hash = ?", args: [hash] });
   if (existing.rows.length) return NextResponse.json({ error: "Bu dosya daha önce yüklendi." }, { status: 409 });
   const id = randomUUID();
+  const isVercel = Boolean(process.env.VERCEL);
   const folder = path.join(process.cwd(), "data", "statements");
-  await mkdir(folder, { recursive: true });
   const target = path.join(folder, id);
-  await writeFile(target, bytes, { flag: "wx" });
+  if (!isVercel) {
+    await mkdir(folder, { recursive: true });
+    await writeFile(target, bytes, { flag: "wx" });
+  }
   try {
-    await db.execute({ sql: "INSERT INTO statements (id, name, created_at, status, hash) VALUES (?, ?, ?, ?, ?)", args: [id, name, new Date().toISOString(), "pending", hash] });
+    await db.batch([
+      { sql: "INSERT INTO statements (id, name, created_at, status, hash) VALUES (?, ?, ?, ?, ?)", args: [id, name, new Date().toISOString(), "pending", hash] },
+      { sql: "INSERT INTO statement_files (statement_id, data) VALUES (?, ?)", args: [id, new Uint8Array(bytes)] },
+    ], "write");
   } catch (error) {
-    await unlink(target);
+    if (!isVercel) await unlink(target).catch(() => {});
     throw error;
   }
   return NextResponse.json({ id, message: "Dosya kaydedildi. Ekstre listesindeki AI ile analiz et düğmesiyle analizi başlatabilirsiniz." }, { status: 201 });

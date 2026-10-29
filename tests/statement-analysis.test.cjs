@@ -967,3 +967,42 @@ test("branch-agnostic learning, historical category replacement, and adding new 
   assert.equal(st2After.rows.find(r => r.merchant === "STARBUCKS BESIKTAS POS9876").installment, "3/6");
   assert.ok(st2After.rows.some(r => r.merchant === "Unutulan Satır" && r.amount === 45000));
 });
+
+test("serverless Vercel mode stores, serves, analyzes and deletes statement files directly in database without touching disk", async () => {
+  const uploadRoute = require("../src/app/api/statements/route.ts");
+  const documentRoute = require("../src/app/api/statements/[id]/document/route.ts");
+  const db = await database();
+  const pdfContent = `%PDF-vercel-${randomUUID()}`;
+  process.env.VERCEL = "1";
+  process.env.OPENAI_API_KEY = "unit-test-key";
+  global.fetch = async () => Response.json({ status: "completed", model: "gpt-4.1", output: [{ content: [{ type: "output_text", text: JSON.stringify(sample) }] }] });
+
+  try {
+    const form = new FormData();
+    form.set("file", new File([pdfContent], "vercel-statement.pdf", { type: "application/pdf" }));
+    form.set("name", "Vercel Ekstre");
+    const uploadRes = await uploadRoute.POST(new Request("http://localhost/api/statements", { method: "POST", headers: { host: "localhost", origin: "http://localhost" }, body: form }));
+    assert.equal(uploadRes.status, 201);
+    const { id } = await uploadRes.json();
+
+    // Ensure no file was written to local disk in Vercel mode
+    assert.equal(fs.existsSync(path.join(process.cwd(), "data", "statements", id)), false);
+
+    // Ensure document route reads the PDF from statement_files table
+    const docRes = await documentRoute.GET(new Request("http://localhost"), { params: Promise.resolve({ id }) });
+    assert.equal(docRes.status, 200);
+    assert.equal(docRes.headers.get("Content-Type"), "application/pdf");
+    assert.equal(Buffer.from(await docRes.arrayBuffer()).toString("utf8"), pdfContent);
+
+    // Ensure analyze route reads the PDF from statement_files table
+    const analyzeRes = await analyzeRoute.POST(request({}), { params: Promise.resolve({ id }) });
+    assert.equal(analyzeRes.status, 200);
+
+    // Ensure delete removes statement_files row
+    const delRes = await statementRoute.DELETE(request({}), { params: Promise.resolve({ id }) });
+    assert.equal(delRes.status, 200);
+    assert.equal((await db.execute({ sql: "SELECT * FROM statement_files WHERE statement_id = ?", args: [id] })).rows.length, 0);
+  } finally {
+    delete process.env.VERCEL;
+  }
+});
