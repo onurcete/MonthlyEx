@@ -13,6 +13,10 @@ export async function POST(request: Request) {
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File) || file.size === 0 || file.size > 20 * 1024 * 1024) return NextResponse.json({ error: "En fazla 20 MB boyutunda bir PDF veya görsel seçin." }, { status: 400 });
+  const requestedName = form?.get("name");
+  if (requestedName !== null && requestedName !== undefined && typeof requestedName !== "string") return NextResponse.json({ error: "Geçerli bir kayıt adı girin." }, { status: 400 });
+  const name = (requestedName?.trim() || file.name.slice(0, 200)).trim();
+  if (!name || name.length > 200 || /[\u0000-\u001f\u007f]/.test(name)) return NextResponse.json({ error: "Kayıt adı en fazla 200 karakter olmalı ve kontrol karakteri içermemeli." }, { status: 400 });
   const bytes = Buffer.from(await file.arrayBuffer());
   const valid = bytes.subarray(0, 5).toString() === "%PDF-" || bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) || (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) || (bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP");
   if (!valid) return NextResponse.json({ error: "Desteklenen biçimler: PDF, PNG, JPEG ve WebP." }, { status: 400 });
@@ -26,10 +30,10 @@ export async function POST(request: Request) {
   const target = path.join(folder, id);
   await writeFile(target, bytes, { flag: "wx" });
   try {
-    await db.execute({ sql: "INSERT INTO statements (id, name, created_at, status, hash) VALUES (?, ?, ?, ?, ?)", args: [id, file.name.slice(0, 200), new Date().toISOString(), "pending", hash] });
+    await db.execute({ sql: "INSERT INTO statements (id, name, created_at, status, hash) VALUES (?, ?, ?, ?, ?)", args: [id, name, new Date().toISOString(), "pending", hash] });
   } catch (error) {
     await unlink(target);
     throw error;
   }
-  return NextResponse.json({ id, message: "Dosya yerelde saklandı. Otomatik analiz henüz bağlı değil." }, { status: 201 });
+  return NextResponse.json({ id, message: "Dosya kaydedildi. Ekstre listesindeki AI ile analiz et düğmesiyle analizi başlatabilirsiniz." }, { status: 201 });
 }

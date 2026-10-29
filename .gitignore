@@ -1,8 +1,10 @@
 node_modules/
 .next/
 out/
-data/
+output/
+/data/
 uploads/
+ekstre/
 .env*
 !.env.example
 *.db

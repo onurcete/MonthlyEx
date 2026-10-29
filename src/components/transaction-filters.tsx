@@ -1,0 +1,11 @@
+"use client";
+import type { Card, Category } from "@/lib/types";
+
+type Props = { cards: Card[]; categories: Category[]; query: string; setQuery: (value: string) => void; category: string; setCategory: (value: string) => void; card: string; setCard: (value: string) => void; date: string; setDate: (value: string) => void };
+export default function TransactionFilters({ cards, categories, query, setQuery, category, setCategory, card, setCard, date, setDate }: Props) {
+  const active = Boolean(query || category || card || date);
+  const selected = categories.find(item => item.id === category);
+  const root = selected?.parentId ?? selected?.id ?? "";
+  const children = categories.filter(item => item.parentId === root);
+  return <div className="filters transaction-filters"><label>İş yeri<input placeholder="İş yeri ara…" aria-label="İş yeri ara" value={query} onChange={event => setQuery(event.target.value)}/></label><label>Kart<select aria-label="İşlemlerde kart filtresi" value={card} onChange={event => setCard(event.target.value)}><option value="">Tüm kartlar</option>{cards.map(item => <option key={item.id} value={item.id}>{item.name} · {item.lastFour}</option>)}</select></label><label>Ana kategori<select aria-label="İşlemlerde ana kategori filtresi" value={root} onChange={event => setCategory(event.target.value)}><option value="">Tüm ana kategoriler</option>{categories.filter(item => item.parentId === null).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Alt kategori<select aria-label="İşlemlerde alt kategori filtresi" disabled={!root || !children.length} value={selected?.parentId ? selected.id : ""} onChange={event => setCategory(event.target.value || root)}><option value="">{root ? "Tüm alt kategoriler" : "Önce ana kategori seç"}</option>{children.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>İşlem tarihi<input aria-label="İşlemlerde tarih filtresi" type="date" value={date} onChange={event => setDate(event.target.value)}/></label>{active && <button className="atlas-clear" onClick={() => { setQuery(""); setCategory(""); setCard(""); setDate(""); }}>Filtreleri temizle</button>}</div>;
+}
