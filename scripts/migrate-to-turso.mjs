@@ -38,45 +38,57 @@ async function main() {
     "write"
   );
 
-  // 1. Categories (roots first, then subcategories)
+  // 1. Categories
   const categories = (await local.execute("SELECT id, name, parent_id FROM categories")).rows;
   const roots = categories.filter(r => r.parent_id === null);
   const subs = categories.filter(r => r.parent_id !== null);
-  for (const row of [...roots, ...subs]) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO categories (id, name, parent_id) VALUES (?, ?, ?)",
-      args: [row.id, row.name, row.parent_id],
-    });
+  if (categories.length) {
+    await remote.batch(
+      [...roots, ...subs].map(row => ({
+        sql: "INSERT OR REPLACE INTO categories (id, name, parent_id) VALUES (?, ?, ?)",
+        args: [row.id, row.name, row.parent_id],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${categories.length} kategori aktarıldı.`);
 
   // 2. Cards
   const cards = (await local.execute("SELECT id, name, last_four FROM cards")).rows;
-  for (const row of cards) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO cards (id, name, last_four) VALUES (?, ?, ?)",
-      args: [row.id, row.name, row.last_four],
-    });
+  if (cards.length) {
+    await remote.batch(
+      cards.map(row => ({
+        sql: "INSERT OR REPLACE INTO cards (id, name, last_four) VALUES (?, ?, ?)",
+        args: [row.id, row.name, row.last_four],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${cards.length} kart aktarıldı.`);
 
   // 3. Statements
   const statements = (await local.execute("SELECT id, name, created_at, status, hash FROM statements")).rows;
-  for (const row of statements) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO statements (id, name, created_at, status, hash) VALUES (?, ?, ?, ?, ?)",
-      args: [row.id, row.name, row.created_at, row.status, row.hash],
-    });
+  if (statements.length) {
+    await remote.batch(
+      statements.map(row => ({
+        sql: "INSERT OR REPLACE INTO statements (id, name, created_at, status, hash) VALUES (?, ?, ?, ?, ?)",
+        args: [row.id, row.name, row.created_at, row.status, row.hash],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${statements.length} ekstre kaydı aktarıldı.`);
 
   // 4. Statement Periods
   const periods = (await local.execute("SELECT statement_id, month FROM statement_periods")).rows;
-  for (const row of periods) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO statement_periods (statement_id, month) VALUES (?, ?)",
-      args: [row.statement_id, row.month],
-    });
+  if (periods.length) {
+    await remote.batch(
+      periods.map(row => ({
+        sql: "INSERT OR REPLACE INTO statement_periods (statement_id, month) VALUES (?, ?)",
+        args: [row.statement_id, row.month],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${periods.length} ekstre dönemi aktarıldı.`);
 
@@ -84,21 +96,27 @@ async function main() {
   const analyses = (
     await local.execute("SELECT statement_id, result, error, model, usage, started_at, token FROM statement_analyses")
   ).rows;
-  for (const row of analyses) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO statement_analyses (statement_id, result, error, model, usage, started_at, token) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [row.statement_id, row.result, row.error, row.model, row.usage, row.started_at ?? 0, row.token],
-    });
+  if (analyses.length) {
+    await remote.batch(
+      analyses.map(row => ({
+        sql: "INSERT OR REPLACE INTO statement_analyses (statement_id, result, error, model, usage, started_at, token) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        args: [row.statement_id, row.result, row.error, row.model, row.usage, row.started_at ?? 0, row.token],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${analyses.length} ekstre analizi aktarıldı.`);
 
   // 6. Expenses
   const expenses = (await local.execute("SELECT id, card_id, date, merchant, amount, category, kind FROM expenses")).rows;
-  for (const row of expenses) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO expenses (id, card_id, date, merchant, amount, category, kind) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [row.id, row.card_id, row.date, row.merchant, row.amount, row.category, row.kind],
-    });
+  if (expenses.length) {
+    await remote.batch(
+      expenses.map(row => ({
+        sql: "INSERT OR REPLACE INTO expenses (id, card_id, date, merchant, amount, category, kind) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        args: [row.id, row.card_id, row.date, row.merchant, row.amount, row.category, row.kind],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${expenses.length} harcama/iade işlemi aktarıldı.`);
 
@@ -106,31 +124,37 @@ async function main() {
   const statementExpenses = (
     await local.execute("SELECT expense_id, statement_id, source_page, installment FROM statement_expenses")
   ).rows;
-  for (const row of statementExpenses) {
-    await remote.execute({
-      sql: "INSERT OR REPLACE INTO statement_expenses (expense_id, statement_id, source_page, installment) VALUES (?, ?, ?, ?)",
-      args: [row.expense_id, row.statement_id, row.source_page, row.installment],
-    });
+  if (statementExpenses.length) {
+    await remote.batch(
+      statementExpenses.map(row => ({
+        sql: "INSERT OR REPLACE INTO statement_expenses (expense_id, statement_id, source_page, installment) VALUES (?, ?, ?, ?)",
+        args: [row.expense_id, row.statement_id, row.source_page, row.installment],
+      })),
+      "write"
+    );
   }
   console.log(`✓ ${statementExpenses.length} ekstre-işlem bağlantısı aktarıldı.`);
 
-  // 8. Merchant Examples (Learning Memory)
+  // 8. Merchant Examples
   try {
     const examples = (
       await local.execute("SELECT expense_id, merchant_key, category_id, updated_at FROM merchant_examples")
     ).rows;
-    for (const row of examples) {
-      await remote.execute({
-        sql: "INSERT OR REPLACE INTO merchant_examples (expense_id, merchant_key, category_id, updated_at) VALUES (?, ?, ?, ?)",
-        args: [row.expense_id, row.merchant_key, row.category_id, row.updated_at],
-      });
+    if (examples.length) {
+      await remote.batch(
+        examples.map(row => ({
+          sql: "INSERT OR REPLACE INTO merchant_examples (expense_id, merchant_key, category_id, updated_at) VALUES (?, ?, ?, ?)",
+          args: [row.expense_id, row.merchant_key, row.category_id, row.updated_at],
+        })),
+        "write"
+      );
     }
     console.log(`✓ ${examples.length} öğrenilmiş iş yeri hafıza kaydı aktarıldı.`);
   } catch {
     console.log("ℹ Yerel veritabanında merchant_examples tablosu henüz yok, atlandı.");
   }
 
-  // 9. Statement Files (from local data/statements/ folder or local statement_files table)
+  // 9. Statement Files
   let fileCount = 0;
   for (const stmt of statements) {
     const id = String(stmt.id);
